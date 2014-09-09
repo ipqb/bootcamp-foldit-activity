@@ -1,0 +1,7 @@
+version: 1
+{
+ "can_design" : "1-9999||"
+ "can_delete" : "1-9999||"
+ "can_insert_after" : "1-9999||"
+ "can_insert_before" : "1-9999||"
+}
