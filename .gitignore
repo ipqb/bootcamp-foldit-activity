@@ -1,3 +1,6 @@
+# Project-specific files
+last_saved_state.pickle
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

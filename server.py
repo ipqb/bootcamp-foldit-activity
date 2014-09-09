@@ -10,11 +10,18 @@ import datetime
 import time
 import subprocess
 
+try:
+    import cPickle as pickle
+except ImportError:
+    print 'cPickle not available, using regular pickle module'
+    import pickle
+
 # Constants
 dssp_binary_location = os.path.expanduser('~/bin/mkdssp')
 time_print_interval = datetime.timedelta(minutes=5) # How often to print regular time updates
 short_time_print_interval = datetime.timedelta(seconds=15) # How often to print short time updates
 shortest_time_print_interval = datetime.timedelta(seconds=1) # How often to print shortest time updates
+last_state_file = 'last_saved_state.pickle'
 
 def ordinal(value):
     """
@@ -171,17 +178,21 @@ def print_remaining_time(end_time):
             else:
                 print '\n######## Contest ends in: %d seconds ########' % (seconds)
 
-def main(input_directory, end_time):
-    known_pdbs = set()
-    helix_lengths = []
-    helical_contents = []
+def save_state(input_directory, known_pdbs, helix_lengths, helical_contents, remaining_time):
+    with open(last_state_file, 'w') as f:
+        pickle.dump( (input_directory, known_pdbs, helix_lengths, helical_contents, remaining_time), f)
 
+def main(
+    input_directory, end_time,
+    known_pdbs=set(), helix_lengths = [], helical_contents = []
+):
     print_remaining_time(end_time)
     last_time_update = datetime.datetime.now()
     time_to_compare = time_print_interval
     while(end_time > datetime.datetime.now()):
         time_since_update = datetime.datetime.now() - last_time_update
         remaining_time = end_time - datetime.datetime.now()
+        save_state(input_directory, known_pdbs, helix_lengths, helical_contents, remaining_time)
 
         if remaining_time < datetime.timedelta(seconds=30):
             time_to_compare = shortest_time_print_interval
@@ -251,7 +262,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=program_description)
 
     parser.add_argument('input_directory',
-                        help = 'Name of directory to monitor for live addition of PDB files')
+                        help = 'Name of directory to monitor for live addition of PDB files. Or pass "resume" to resume from saved pickle state.')
     parser.add_argument('-e', '--end_time',
                         type = mktime,
                         default = None,
@@ -259,12 +270,22 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    assert( os.path.isdir(args.input_directory) )
-    if args.end_time:
-        end_time = args.end_time
+    if args.input_directory.lower() == 'resume':
+        with open(last_state_file, 'r') as f:
+            input_directory, known_pdbs, helix_lengths, helical_contents, remaining_time = pickle.load(f)
+            end_time = datetime.datetime.now() + remaining_time
+            main(
+                input_directory, end_time,
+                known_pdbs=known_pdbs, helix_lengths=helix_lengths, helical_contents=helical_contents
+                )
     else:
-        end_time = datetime.datetime.now() + datetime.timedelta(seconds=30)
+        assert( os.path.isdir(args.input_directory) )
 
-    assert( end_time > datetime.datetime.now() )
+        if args.end_time:
+            end_time = args.end_time
+        else:
+            end_time = datetime.datetime.now() + datetime.timedelta(seconds=30)
 
-    main(args.input_directory, end_time)
+        assert( end_time > datetime.datetime.now() )
+
+        main(args.input_directory, end_time)
