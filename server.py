@@ -6,11 +6,69 @@ __author__ = "Kyle Barlow"
 import os
 import sys
 import argparse
+import datetime
 import time
 import subprocess
 
 # Constants
 dssp_binary_location = os.path.expanduser('~/bin/mkdssp')
+time_print_interval = datetime.timedelta(minutes=5) # How often to print regular time updates
+short_time_print_interval = datetime.timedelta(seconds=15) # How often to print short time updates
+shortest_time_print_interval = datetime.timedelta(seconds=1) # How often to print shortest time updates
+
+def ordinal(value):
+    """
+    Hattip: http://code.activestate.com/recipes/576888-format-a-number-as-an-ordinal/
+
+    Converts zero or a *postive* integer (or their string 
+    representations) to an ordinal value.
+
+    >>> for i in range(1,13):
+    ...     ordinal(i)
+    ...     
+    u'1st'
+    u'2nd'
+    u'3rd'
+    u'4th'
+    u'5th'
+    u'6th'
+    u'7th'
+    u'8th'
+    u'9th'
+    u'10th'
+    u'11th'
+    u'12th'
+
+    >>> for i in (100, '111', '112',1011):
+    ...     ordinal(i)
+    ...     
+    u'100th'
+    u'111th'
+    u'112th'
+    u'1011th'
+
+    """
+    try:
+        value = int(value)
+    except ValueError:
+        return value
+
+    if value % 100//10 != 1:
+        if value % 10 == 1:
+            ordval = u"%d%s" % (value, "st")
+        elif value % 10 == 2:
+            ordval = u"%d%s" % (value, "nd")
+        elif value % 10 == 3:
+            ordval = u"%d%s" % (value, "rd")
+        else:
+            ordval = u"%d%s" % (value, "th")
+    else:
+        ordval = u"%d%s" % (value, "th")
+
+    return ordval
+
+def mktime(timestring):
+    return datetime.datetime.strptime(timestring, '%Y-%m-%d %I:%M%p')
 
 def check_for_new_pdbs(input_directory, previously_discovered_pdbs):
     new_pdbs = set()
@@ -97,32 +155,116 @@ def longest_helix_from_dict(dssp_dict):
             
     return longest_helix
 
-def main(input_directory):
-    known_pdbs = set()
+def print_remaining_time(end_time):
+    time_left = end_time - datetime.datetime.now()
+    total_seconds = int(time_left.total_seconds())
+    hours, remainder = divmod(total_seconds, 60*60)
+    minutes, seconds = divmod(remainder, 60)
+    if hours > 0:
+        print '\n######## Contest ends in: %d hours, %d minutes ########' % (hours, minutes)
+    else:
+        if minutes > 5:
+            print '\n######## Contest ends in: %d minutes ########' % (minutes)
+        else:
+            if minutes > 0:
+                print '\n######## Contest ends in: %d minutes, %d seconds ########' % (minutes, seconds)
+            else:
+                print '\n######## Contest ends in: %d seconds ########' % (seconds)
 
-    while(True):
+def main(input_directory, end_time):
+    known_pdbs = set()
+    helix_lengths = []
+    helical_contents = []
+
+    print_remaining_time(end_time)
+    last_time_update = datetime.datetime.now()
+    time_to_compare = time_print_interval
+    while(end_time > datetime.datetime.now()):
+        time_since_update = datetime.datetime.now() - last_time_update
+        remaining_time = end_time - datetime.datetime.now()
+
+        if remaining_time < datetime.timedelta(seconds=30):
+            time_to_compare = shortest_time_print_interval
+        elif remaining_time < datetime.timedelta(minutes=2):
+            time_to_compare = short_time_print_interval
+        else:
+            time_to_compare = time_print_interval
+
+        if time_since_update > time_to_compare:
+            print_remaining_time(end_time)
+            last_time_update = datetime.datetime.now()
+
         new_pdbs = check_for_new_pdbs(input_directory, known_pdbs)
 
         for new_pdb in new_pdbs:
-            print '\nProcessing new pdb: %s' % os.path.basename(new_pdb)
+            print '\nFound new pdb: %s' % os.path.basename(new_pdb)
             dssp_dict = run_dssp(new_pdb)
+
             longest_helix = longest_helix_from_dict(dssp_dict)
             helical_content = helical_content_from_dict(dssp_dict)
+
             print 'Longest helix: %d residues' % longest_helix
+            helix_lengths.append( (longest_helix, new_pdb) )
+
             print 'Total helical content: %.2f%%' % (helical_content*100.0)
+            helical_contents.append( (helical_content, new_pdb) )
+            
 
         known_pdbs.update(new_pdbs)
 
         time.sleep(1)
+
+    # Contest done, print winners!
+    helix_lengths.sort(reverse=True)
+    helical_contents.sort(reverse=True)
+    print '\nContest over - runner-up results will be shown in 10 seconds (for suspense)\n'
+    time.sleep(10)
+
+    print '#### CONTEST RESULTS!!!! ####'
+    print 'Helix length category runner-ups:'
+    for i, helix_length in enumerate(helix_lengths[1:5]):
+        print '%s place: %s, with a longest helix length of: %d' % (ordinal(i+2),
+                                                                    os.path.basename(helix_length[1]),
+                                                                    helix_length[0])
+
+    print '\nHelical content category runner-ups:'
+    for i, helix_length in enumerate(helical_contents[1:5]):
+        print '%s place: %s, with a total helical content of: %.4f%%' % (ordinal(i+2),
+                                                                         os.path.basename(helix_length[1]),
+                                                                         helix_length[0])
+
+    time.sleep(10)
+    if len(helix_lengths) > 0:
+        print '\nHELIX LENGTH CHAMPION:'
+        print helix_lengths[0][1]
+        print '%s place: %s, with a longest helix length of: %d' % (ordinal(1),
+                                                                         os.path.basename(helix_lengths[0][1]),
+                                                                         helix_lengths[0][0])
+    if len(helical_contents) > 0:
+        print '\nHELIX CONTENT CHAMPION:'
+        print helical_contents[0][1]
+        print '%s place: %s, with a total helical content of: %.4f%%' % (ordinal(1),
+                                                                         os.path.basename(helical_contents[0][1]),
+                                                                         helical_contents[0][0])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=program_description)
 
     parser.add_argument('input_directory',
                         help = 'Name of directory to monitor for live addition of PDB files')
+    parser.add_argument('-e', '--end_time',
+                        type = mktime,
+                        default = None,
+                        help = 'Contest end time in format YY-MM-DD HH:MMpm')
 
     args = parser.parse_args()
 
     assert( os.path.isdir(args.input_directory) )
+    if args.end_time:
+        end_time = args.end_time
+    else:
+        end_time = datetime.datetime.now() + datetime.timedelta(seconds=30)
 
-    main(args.input_directory)
+    assert( end_time > datetime.datetime.now() )
+
+    main(args.input_directory, end_time)
